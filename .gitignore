@@ -1,7 +1,16 @@
-/.idea
-/3124008821Java.iml
-/Calculator$1.class
-/Calculator$2.class
-/Calculator.class
-/calculator_history.txt
-/out
+# Java
+*.class
+*.jar
+
+# History
+calculator_history.txt
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db

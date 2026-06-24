@@ -6,6 +6,8 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class Calculator extends JFrame implements ActionListener {
     private JTextField display;
@@ -23,7 +25,6 @@ public class Calculator extends JFrame implements ActionListener {
         history = new ArrayList<>();
         isScientificMode = false;
         
-        loadHistory();
         initUI();
     }
 
@@ -71,13 +72,9 @@ public class Calculator extends JFrame implements ActionListener {
         JMenu fileMenu = new JMenu("File(F)");
         fileMenu.setMnemonic('F');
         
-        JMenuItem saveHistory = new JMenuItem("Save History");
-        saveHistory.setMnemonic('S');
-        saveHistory.addActionListener(e -> saveHistory());
-        
-        JMenuItem loadHistoryItem = new JMenuItem("Load History");
-        loadHistoryItem.setMnemonic('L');
-        loadHistoryItem.addActionListener(e -> loadHistory());
+        JMenuItem viewHistory = new JMenuItem("View History");
+        viewHistory.setMnemonic('V');
+        viewHistory.addActionListener(e -> viewHistory());
         
         JMenuItem clearHistory = new JMenuItem("Clear History");
         clearHistory.setMnemonic('C');
@@ -87,8 +84,7 @@ public class Calculator extends JFrame implements ActionListener {
         exit.setMnemonic('X');
         exit.addActionListener(e -> System.exit(0));
         
-        fileMenu.add(saveHistory);
-        fileMenu.add(loadHistoryItem);
+        fileMenu.add(viewHistory);
         fileMenu.add(clearHistory);
         fileMenu.addSeparator();
         fileMenu.add(exit);
@@ -323,13 +319,27 @@ public class Calculator extends JFrame implements ActionListener {
         input = new StringBuilder(expression);
         try {
             double result = evaluateExpression(expression);
-            String historyRecord = expression + " = " + result;
+            LocalDateTime now = LocalDateTime.now();
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            String historyRecord = now.format(formatter) + " | " + expression + " = " + result;
             history.add(historyRecord);
+            autoSaveHistory();
             display.setText(String.valueOf(result));
             input = new StringBuilder(String.valueOf(result));
         } catch (Exception ex) {
             display.setText("Error");
             JOptionPane.showMessageDialog(this, "Calculation error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void autoSaveHistory() {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(HISTORY_FILE))) {
+            for (String record : history) {
+                writer.write(record);
+                writer.newLine();
+            }
+        } catch (IOException ex) {
+            // 自动保存失败不提示，避免打扰用户
         }
     }
 
@@ -534,33 +544,6 @@ public class Calculator extends JFrame implements ActionListener {
         setLocationRelativeTo(null);
     }
 
-    private void saveHistory() {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(HISTORY_FILE))) {
-            for (String record : history) {
-                writer.write(record);
-                writer.newLine();
-            }
-            JOptionPane.showMessageDialog(this, "History saved", "Success", JOptionPane.INFORMATION_MESSAGE);
-        } catch (IOException ex) {
-            JOptionPane.showMessageDialog(this, "Save failed: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void loadHistory() {
-        history.clear();
-        File file = new File(HISTORY_FILE);
-        if (file.exists()) {
-            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    history.add(line);
-                }
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Load failed: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-            }
-        }
-    }
-
     private void clearHistory() {
         int confirm = JOptionPane.showConfirmDialog(this, "Clear history?", "Confirm", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
@@ -570,16 +553,79 @@ public class Calculator extends JFrame implements ActionListener {
         }
     }
 
+    private void viewHistory() {
+        // 自动从文件加载历史记录
+        File file = new File(HISTORY_FILE);
+        if (file.exists() && history.isEmpty()) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    history.add(line);
+                }
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(this, "加载失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+        }
+        
+        if (history.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "历史记录为空", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 按日期分组显示
+        StringBuilder sb = new StringBuilder();
+        String currentDate = "";
+        
+        for (String record : history) {
+            // 格式: yyyy-MM-dd HH:mm:ss | expression = result
+            String date = "";
+            String timeAndCalc = record;
+            
+            if (record.contains("|")) {
+                String[] parts = record.split("\\|");
+                if (parts.length >= 2) {
+                    String dateTime = parts[0].trim();
+                    if (dateTime.contains(" ")) {
+                        date = dateTime.split(" ")[0];
+                        timeAndCalc = dateTime.split(" ")[1] + " | " + parts[1].trim();
+                    }
+                }
+            }
+            
+            // 如果日期变化，添加日期标题
+            if (!date.isEmpty() && !date.equals(currentDate)) {
+                if (!currentDate.isEmpty()) {
+                    sb.append("\n");
+                }
+                sb.append("【").append(date).append("】\n");
+                currentDate = date;
+            }
+            
+            sb.append("  ").append(timeAndCalc).append("\n");
+        }
+        
+        JTextArea textArea = new JTextArea(sb.toString());
+        textArea.setEditable(false);
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(350, 250));
+        
+        JOptionPane.showMessageDialog(this, scrollPane, "历史记录 (" + history.size() + " 条)", JOptionPane.INFORMATION_MESSAGE);
+    }
+
     private void showAbout() {
         JOptionPane.showMessageDialog(this, 
-            "多功能计算器 v1.0\n\n" +
-            "功能特点：\n" +
+            "多功能计算器 v1.2\n\n" +
+            "功能：\n" +
             "- 基本四则运算\n" +
             "- 科学计算函数\n" +
             "- 表达式解析\n" +
             "- 历史记录管理\n" +
-            "- 键盘输入支持\n" +
-            "- \n开发者: Kam1ng From GDUT\n" +
+            "- 键盘输入支持\n\n" +
+            "开发者： Kam1ng From GDUT\n" +
+            "https://github.com/Kam1ng/Calculator", 
             "关于", 
             JOptionPane.INFORMATION_MESSAGE);
     }
