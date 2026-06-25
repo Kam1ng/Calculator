@@ -39,19 +39,17 @@ public class Calculator extends JFrame implements ActionListener {
         display = new JTextField("0");
         display.setHorizontalAlignment(JTextField.RIGHT);
         display.setFont(new Font("Arial", Font.PLAIN, 28));
-        display.setEditable(true);
+        display.setEditable(false);  // 禁用默认输入，完全由自定义逻辑控制
         display.setBackground(Color.WHITE);
+        display.setFocusable(true);
         display.addKeyListener(new java.awt.event.KeyAdapter() {
             public void keyPressed(java.awt.event.KeyEvent e) {
                 handleKeyPress(e);
             }
-            public void keyReleased(java.awt.event.KeyEvent e) {
-                syncInput();
-            }
         });
         display.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent e) {
-                syncInput();
+                display.setCaretPosition(display.getText().length());  // 点击时光标移到末尾
             }
         });
         
@@ -158,10 +156,10 @@ public class Calculator extends JFrame implements ActionListener {
         
         String[] buttons = {
             "sin", "cos",
-            "tan", "log",
-            "ln", "x^2",
-            "x^3", "1/x",
+            "tan", "lg",
+            "log", "ln",
             "deg", "rad",
+            "1/x", ",",
             "asin", "acos"
         };
         
@@ -204,15 +202,19 @@ public class Calculator extends JFrame implements ActionListener {
         if (Character.isDigit(c) || c == '.' || c == '+' || c == '-' || c == '*' || c == '/' || c == '^' || c == '(' || c == ')') {
             input.append(c);
             display.setText(input.toString());
+            e.consume();
         } else if (keyCode == java.awt.event.KeyEvent.VK_ENTER || keyCode == java.awt.event.KeyEvent.VK_EQUALS) {
             calculate();
+            e.consume();
         } else if (keyCode == java.awt.event.KeyEvent.VK_ESCAPE || (keyCode == java.awt.event.KeyEvent.VK_C && e.isControlDown())) {
             clear();
+            e.consume();
         } else if (keyCode == java.awt.event.KeyEvent.VK_BACK_SPACE) {
             if (input.length() > 0) {
                 input.deleteCharAt(input.length() - 1);
                 display.setText(input.length() > 0 ? input.toString() : "0");
             }
+            e.consume();
         } else if (keyCode == java.awt.event.KeyEvent.VK_DELETE) {
             if (input.length() > 0) {
                 int cursorPos = display.getCaretPosition();
@@ -222,6 +224,7 @@ public class Calculator extends JFrame implements ActionListener {
                     display.setCaretPosition(cursorPos - 1);
                 }
             }
+            e.consume();
         } else if (keyCode == java.awt.event.KeyEvent.VK_LEFT) {
             e.consume();
         } else if (keyCode == java.awt.event.KeyEvent.VK_RIGHT) {
@@ -229,9 +232,11 @@ public class Calculator extends JFrame implements ActionListener {
         } else if (keyCode == java.awt.event.KeyEvent.VK_P && e.isControlDown()) {
             input.append("pi");
             display.setText(input.toString());
+            e.consume();
         } else if (keyCode == java.awt.event.KeyEvent.VK_E && e.isControlDown()) {
             input.append("e");
             display.setText(input.toString());
+            e.consume();
         }
     }
 
@@ -281,18 +286,22 @@ public class Calculator extends JFrame implements ActionListener {
             } else if (command.equals("tan")) {
                 input.append("tan(");
                 display.setText(input.toString());
+            } else if (command.equals("lg")) {
+                input.append("lg(");
+                display.setText(input.toString());
             } else if (command.equals("log")) {
                 input.append("log(");
                 display.setText(input.toString());
             } else if (command.equals("ln")) {
                 input.append("ln(");
                 display.setText(input.toString());
-            } else if (command.equals("x^2")) {
-                input.append("^2");
+            } else if (command.equals(",")) {
+                input.append(",");
                 display.setText(input.toString());
-            } else if (command.equals("x^3")) {
-                input.append("^3");
-                display.setText(input.toString());
+            } else if (command.equals("deg")) {
+                JOptionPane.showMessageDialog(this, "Switched to Degree Mode", "Mode", JOptionPane.INFORMATION_MESSAGE);
+            } else if (command.equals("rad")) {
+                JOptionPane.showMessageDialog(this, "Switched to Radian Mode", "Mode", JOptionPane.INFORMATION_MESSAGE);
             } else if (command.equals("1/x")) {
                 input.append("1/");
                 display.setText(input.toString());
@@ -348,7 +357,13 @@ public class Calculator extends JFrame implements ActionListener {
     }
 
     private double evaluateExpression(String expression) throws Exception {
+        if (expression == null || expression.trim().isEmpty()) {
+            throw new Exception("Empty expression");
+        }
         List<String> tokens = tokenize(expression);
+        if (tokens.isEmpty()) {
+            throw new Exception("Invalid expression");
+        }
         return parseExpression(tokens);
     }
 
@@ -379,8 +394,11 @@ public class Calculator extends JFrame implements ActionListener {
                 if (expression.charAt(i + 1) == 'o') {
                     tokens.add("log");
                     i += 2;
-                } else {
+                } else if (expression.charAt(i + 1) == 'n') {
                     tokens.add("ln");
+                    i += 1;
+                } else if (expression.charAt(i + 1) == 'g') {
+                    tokens.add("lg");
                     i += 1;
                 }
             } else if (c == 's' && i + 3 < expression.length() && expression.substring(i, i + 4).equals("sqrt")) {
@@ -394,7 +412,7 @@ public class Calculator extends JFrame implements ActionListener {
                     tokens.add("acos");
                     i += 3;
                 }
-            } else if (c == '+' || c == '-' || c == '*' || c == '/' || c == '^' || c == '(' || c == ')') {
+            } else if (c == '+' || c == '-' || c == '*' || c == '/' || c == '^' || c == '(' || c == ')' || c == ',') {
                 if (num.length() > 0) {
                     tokens.add(num.toString());
                     num = new StringBuilder();
@@ -413,6 +431,7 @@ public class Calculator extends JFrame implements ActionListener {
     private double parseExpression(List<String> tokens) throws Exception {
         Stack<Double> values = new Stack<>();
         Stack<String> ops = new Stack<>();
+        String prevToken = null;  // 用于判断一元正负号
         
         for (int i = 0; i < tokens.size(); i++) {
             String token = tokens.get(i);
@@ -424,31 +443,63 @@ public class Calculator extends JFrame implements ActionListener {
             } else if (token.matches("[0-9.]+")) {
                 values.push(Double.parseDouble(token));
             } else if (token.equals("sin") || token.equals("cos") || token.equals("tan") ||
-                       token.equals("log") || token.equals("ln") || token.equals("sqrt") ||
-                       token.equals("asin") || token.equals("acos")) {
+                       token.equals("log") || token.equals("ln") || token.equals("lg") ||
+                       token.equals("sqrt") || token.equals("asin") || token.equals("acos")) {
                 ops.push(token);
             } else if (token.equals("(")) {
                 ops.push(token);
             } else if (token.equals(")")) {
-                while (!ops.peek().equals("(")) {
+                while (!ops.isEmpty() && !ops.peek().equals("(")) {
                     applyOp(values, ops);
+                }
+                if (ops.isEmpty()) {
+                    throw new Exception("Mismatched parentheses");
                 }
                 ops.pop();
                 
                 if (!ops.isEmpty() && isFunction(ops.peek())) {
                     applyFunc(values, ops);
                 }
+            } else if (token.equals(",")) {
+                while (!ops.isEmpty() && !ops.peek().equals("(")) {
+                    applyOp(values, ops);
+                }
+                if (ops.isEmpty()) {
+                    throw new Exception("Invalid comma usage");
+                }
             } else if (token.matches("[+\\-*/^]")) {
+                // 检测一元正负号：前面没有操作数时补0
+                // 一元条件：前面是左括号、运算符、或表达式开头
+                boolean isUnary = (prevToken == null || prevToken.equals("(") || prevToken.equals(",")) ||
+                                  (prevToken.matches("[+\\-*/^]"));
+                if (isUnary && (token.equals("+") || token.equals("-"))) {
+                    values.push(0.0);
+                }
                 while (!ops.isEmpty() && !ops.peek().equals("(") && 
                        precedence(ops.peek()) >= precedence(token)) {
                     applyOp(values, ops);
                 }
                 ops.push(token);
+            } else {
+                throw new Exception("Invalid token: " + token);
             }
+            
+            prevToken = token;
         }
         
         while (!ops.isEmpty()) {
-            applyOp(values, ops);
+            if (ops.peek().equals("(")) {
+                throw new Exception("Mismatched parentheses");
+            }
+            if (isFunction(ops.peek())) {
+                applyFunc(values, ops);
+            } else {
+                applyOp(values, ops);
+            }
+        }
+        
+        if (values.size() != 1) {
+            throw new Exception("Invalid expression");
         }
         
         return values.pop();
@@ -456,8 +507,8 @@ public class Calculator extends JFrame implements ActionListener {
 
     private boolean isFunction(String op) {
         return op.equals("sin") || op.equals("cos") || op.equals("tan") ||
-               op.equals("log") || op.equals("ln") || op.equals("sqrt") ||
-               op.equals("asin") || op.equals("acos");
+               op.equals("log") || op.equals("ln") || op.equals("lg") ||
+               op.equals("sqrt") || op.equals("asin") || op.equals("acos");
     }
 
     private int precedence(String op) {
@@ -477,31 +528,47 @@ public class Calculator extends JFrame implements ActionListener {
 
     private void applyOp(Stack<Double> values, Stack<String> ops) throws Exception {
         String op = ops.pop();
+        if (values.size() < 2) {
+            throw new Exception("Not enough operands for " + op);
+        }
         double b = values.pop();
         double a = values.pop();
         
         switch (op) {
-            case "+":
-                values.push(a + b);
-                break;
-            case "-":
-                values.push(a - b);
-                break;
-            case "*":
-                values.push(a * b);
-                break;
+            case "+": values.push(a + b); break;
+            case "-": values.push(a - b); break;
+            case "*": values.push(a * b); break;
             case "/":
                 if (b == 0) throw new Exception("Division by zero");
-                values.push(a / b);
+                values.push(a / b); 
                 break;
-            case "^":
-                values.push(Math.pow(a, b));
-                break;
+            case "^": values.push(Math.pow(a, b)); break;
         }
     }
 
     private void applyFunc(Stack<Double> values, Stack<String> ops) throws Exception {
         String func = ops.pop();
+        
+        switch (func) {
+            case "sin":
+            case "cos":
+            case "tan":
+            case "lg":
+            case "ln":
+            case "sqrt":
+            case "asin":
+            case "acos":
+                if (values.isEmpty()) {
+                    throw new Exception("Not enough operands for " + func);
+                }
+                break;
+            case "log":
+                if (values.size() < 2) {
+                    throw new Exception("Not enough operands for log (need base and argument)");
+                }
+                break;
+        }
+        
         double x = values.pop();
         
         switch (func) {
@@ -514,24 +581,30 @@ public class Calculator extends JFrame implements ActionListener {
             case "tan":
                 values.push(Math.tan(x));
                 break;
-            case "log":
-                if (x <= 0) throw new Exception("Log argument must be > 0");
+            case "lg":
+                if (x <= 0) throw new Exception("Lg argument must be > 0 (got " + x + ")");
                 values.push(Math.log10(x));
                 break;
             case "ln":
-                if (x <= 0) throw new Exception("Ln argument must be > 0");
+                if (x <= 0) throw new Exception("Ln argument must be > 0 (got " + x + ")");
                 values.push(Math.log(x));
                 break;
+            case "log":
+                double base = values.pop();
+                if (x <= 0) throw new Exception("Log argument must be > 0 (got " + x + ")");
+                if (base <= 0 || base == 1) throw new Exception("Log base must be > 0 and != 1 (got " + base + ")");
+                values.push(Math.log(x) / Math.log(base));
+                break;
             case "sqrt":
-                if (x < 0) throw new Exception("Cannot sqrt negative");
+                if (x < 0) throw new Exception("Cannot sqrt negative number (got " + x + ")");
                 values.push(Math.sqrt(x));
                 break;
             case "asin":
-                if (x < -1 || x > 1) throw new Exception("Asin argument out of range");
+                if (x < -1 || x > 1) throw new Exception("Asin argument out of range [-1, 1] (got " + x + ")");
                 values.push(Math.asin(x));
                 break;
             case "acos":
-                if (x < -1 || x > 1) throw new Exception("Acos argument out of range");
+                if (x < -1 || x > 1) throw new Exception("Acos argument out of range [-1, 1] (got " + x + ")");
                 values.push(Math.acos(x));
                 break;
         }
